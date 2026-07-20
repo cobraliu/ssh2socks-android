@@ -63,4 +63,63 @@ open(path, "w").write(src)
 print(f"patched {os.path.relpath(path, app)} (kts={is_kts})")
 PY
 
+echo "==> Injecting namespace fallback for legacy plugins (AGP 8 requires it)"
+# Old plugins (e.g. device_apps) declare no `namespace` and relied on the
+# manifest `package` attr, which AGP 8 ignores -> "Namespace not specified".
+# Back-fill each library subproject's namespace from its manifest package.
+python3 - "$app" <<'PY'
+import os, sys
+app = sys.argv[1]
+groovy = os.path.join(app, "android", "build.gradle")
+kts = os.path.join(app, "android", "build.gradle.kts")
+
+groovy_block = r'''
+
+// --- injected by ci_assemble.sh: namespace fallback for legacy plugins ---
+subprojects {
+    afterEvaluate { proj ->
+        if (proj.extensions.findByName("android") != null) {
+            def ext = proj.extensions.getByName("android")
+            try {
+                if (ext.namespace == null) {
+                    def mf = new File(proj.projectDir, "src/main/AndroidManifest.xml")
+                    if (mf.exists()) {
+                        def m = (mf.text =~ /package="(.+?)"/)
+                        if (m) { ext.namespace = m[0][1] }
+                    }
+                }
+            } catch (ignored) {}
+        }
+    }
+}
+'''
+
+kts_block = r'''
+
+// --- injected by ci_assemble.sh: namespace fallback for legacy plugins ---
+subprojects {
+    afterEvaluate {
+        val ext = extensions.findByName("android")
+        if (ext is com.android.build.gradle.BaseExtension && ext.namespace == null) {
+            val mf = file("src/main/AndroidManifest.xml")
+            if (mf.exists()) {
+                Regex("package=\"(.+?)\"").find(mf.readText())?.let {
+                    ext.namespace = it.groupValues[1]
+                }
+            }
+        }
+    }
+}
+'''
+
+if os.path.exists(groovy):
+    open(groovy, "a").write(groovy_block)
+    print("appended namespace fallback to android/build.gradle")
+elif os.path.exists(kts):
+    open(kts, "a").write(kts_block)
+    print("appended namespace fallback to android/build.gradle.kts")
+else:
+    print("WARNING: no root gradle file found for namespace fallback")
+PY
+
 echo "==> Assembly complete: $app"

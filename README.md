@@ -30,6 +30,14 @@ The **first SSH hop's socket is `protect()`-ed** so it escapes the tun and does
 not loop back through tun2socks. Subsequent hops ride inside that connection as
 `direct-tcpip` channels.
 
+### UDP / DNS
+
+SSH `direct-tcpip` only carries TCP, so the local SOCKS5 server answers
+`UDP ASSOCIATE` in a restricted way: **DNS (UDP :53) is translated to
+DNS-over-TCP** (RFC 7766) and dialed through the chain, so name resolution
+works. All other UDP (e.g. QUIC on UDP/443) is **dropped** — clients such as
+Chrome then fall back to TCP TLS automatically. Pure-UDP apps won't work in v1.
+
 ### ProxyCommand / ProxyJump support
 
 `ProxyJump a,b,c` and `ProxyCommand ssh -W %h:%p <jump>` are resolved natively

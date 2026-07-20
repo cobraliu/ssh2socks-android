@@ -91,9 +91,12 @@ if not is_kts and "keystorePropertiesFile" not in src:
         i = m.end()
         src = src[:i] + sign_block + src[i:]
 
-    src = src.replace(
-        "signingConfig signingConfigs.debug",
-        "signingConfig keystorePropertiesFile.exists() ? signingConfigs.release : signingConfigs.debug",
+    # Flutter 3.24.5's template writes `signingConfig = signingConfigs.debug`
+    # (with `=`); older templates omit it. Match either form.
+    src = re.sub(
+        r'signingConfig\s*=?\s*signingConfigs\.debug',
+        "signingConfig = keystorePropertiesFile.exists() ? signingConfigs.release : signingConfigs.debug",
+        src,
     )
 
 open(path, "w").write(src)

@@ -18,6 +18,12 @@ go install golang.org/x/mobile/cmd/gomobile@latest
 go install golang.org/x/mobile/cmd/gobind@latest
 export PATH="$PATH:$(go env GOPATH)/bin"
 
+echo "==> Adding golang.org/x/mobile to the module graph"
+# gomobile bind (Go 1.24+) requires golang.org/x/mobile in the module graph:
+# the generated binding code imports golang.org/x/mobile/bind. Without this the
+# bind step fails with "missing golang.org/x/mobile dependency".
+( cd "$mobile_dir" && go get golang.org/x/mobile/bind@latest )
+
 echo "==> Resolving module deps (fetches tun2socks etc.)"
 ( cd "$mobile_dir" && go mod tidy )
 

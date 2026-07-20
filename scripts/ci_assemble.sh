@@ -112,12 +112,24 @@ subprojects {
 }
 '''
 
+def inject(path, block):
+    # Insert BEFORE Flutter's own `subprojects { evaluationDependsOn(':app') }`
+    # so our afterEvaluate hook is registered before those blocks force early
+    # evaluation (otherwise: "Cannot run afterEvaluate when already evaluated").
+    src = open(path).read()
+    i = src.find("subprojects {")
+    if i != -1:
+        src = src[:i] + block.strip() + "\n\n" + src[i:]
+    else:
+        src = src + block
+    open(path, "w").write(src)
+
 if os.path.exists(groovy):
-    open(groovy, "a").write(groovy_block)
-    print("appended namespace fallback to android/build.gradle")
+    inject(groovy, groovy_block)
+    print("injected namespace fallback into android/build.gradle")
 elif os.path.exists(kts):
-    open(kts, "a").write(kts_block)
-    print("appended namespace fallback to android/build.gradle.kts")
+    inject(kts, kts_block)
+    print("injected namespace fallback into android/build.gradle.kts")
 else:
     print("WARNING: no root gradle file found for namespace fallback")
 PY

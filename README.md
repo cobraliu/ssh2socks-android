@@ -42,12 +42,41 @@ a clear error rather than silently ignored.
 | Component | State |
 |-----------|-------|
 | `core/` Go engine | **Implemented & unit + integration tested** (`go test ./...`, incl. a real 2-hop sshd E2E) |
-| `mobile/` gomobile bridge | Implemented; **builds in the Android toolchain** (needs NDK + tun2socks fetch) |
-| `app/` Flutter + Kotlin | Scaffold; **builds on device** after `flutter create` wiring (below) |
+| `mobile/` gomobile bridge | **Builds in CI** → `mobile.aar` (gomobile bind, Go 1.26 + tun2socks v2.7.0) |
+| `app/` Flutter + Kotlin | **Builds in CI** → signed-with-debug-key release APK artifact |
 
-Everything under `core/` is verified on this machine. `mobile/` and `app/` are
-compiled in your Android environment — they cannot be built without the Android
-SDK/NDK, Flutter, and network access to fetch tun2socks.
+The GitHub Actions workflow (`.github/workflows/android-apk.yml`) builds the
+whole thing end-to-end on every push and uploads the APK as the `ssh2socks-apk`
+artifact. Everything under `core/` is additionally verified offline on any
+machine with Go via `go test ./...`.
+
+### CI build notes (hard-won constraints)
+
+- **Go 1.26 ⇒ tun2socks v2.7.0.** Older tun2socks (≤ v2.6.x) pin a gvisor whose
+  `pkg/sync` uses `//go:linkname` into Go runtime internals (`goready`,
+  `gopark`, `semacquire`, …) that Go 1.26 no longer exposes → "undefined"
+  link errors. v2.7.0 pins a gvisor built for Go 1.26.3. Its `engine` API
+  (`Key`/`Insert`/`Start`/`Stop`) is unchanged, so `mobile/mobile.go` is untouched.
+- **gomobile bind needs `golang.org/x/mobile` in the module graph.** A plain
+  `go get golang.org/x/mobile/bind` is stripped again by `go mod tidy`; use a
+  **tool directive** (`go get -tool golang.org/x/mobile/cmd/gobind`) which
+  survives tidy. `scripts/build_aar.sh` does this.
+- **`device_apps` (abandoned) vs AGP 8.** It declares no `namespace` and pins an
+  old `compileSdk`. `scripts/ci_assemble.sh` injects a `subprojects` hook into
+  the generated root Gradle that back-fills `namespace` from the manifest
+  `package` and forces `compileSdk 34` (fixes `android:attr/lStar not found`).
+  The hook is injected **before** Flutter's own `subprojects{}` blocks so its
+  `afterEvaluate` registers before early evaluation. If `device_apps` breaks
+  again on a future AGP bump, replace it with a MethodChannel-based app list.
+
+### Download the built APK
+
+- Web: repo → **Actions** → latest green run → **Artifacts** → `ssh2socks-apk`.
+- CLI: `gh run download <run-id> --repo <owner>/<repo> -n ssh2socks-apk`
+
+The artifact is a `.zip` containing `app-release.apk`. It is signed with the
+**debug key** (no release keystore configured), so it installs for testing but
+is not suitable for store distribution — see release signing below.
 
 ## Prerequisites (build machine)
 

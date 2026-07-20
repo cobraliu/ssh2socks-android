@@ -59,6 +59,43 @@ if "mobile.aar" not in src:
     else:
         src += f"\n\ndependencies {{\n    {dep}\n}}\n"
 
+# release signing (Groovy template). Reads key.properties if present (written
+# in CI from GitHub secrets); otherwise the release build stays debug-signed so
+# local builds without a keystore still work.
+if not is_kts and "keystorePropertiesFile" not in src:
+    load_block = (
+        "def keystorePropertiesFile = rootProject.file('key.properties')\n"
+        "def keystoreProperties = new Properties()\n"
+        "if (keystorePropertiesFile.exists()) { "
+        "keystoreProperties.load(new FileInputStream(keystorePropertiesFile)) }\n\n"
+    )
+    m = re.search(r'\nandroid\s*\{', src)
+    if m:
+        i = m.start() + 1  # start of the `android {` line (after plugins{} block)
+        src = src[:i] + load_block + src[i:]
+
+    sign_block = (
+        "\n    signingConfigs {\n"
+        "        release {\n"
+        "            if (keystorePropertiesFile.exists()) {\n"
+        "                keyAlias keystoreProperties['keyAlias']\n"
+        "                keyPassword keystoreProperties['keyPassword']\n"
+        "                storeFile keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null\n"
+        "                storePassword keystoreProperties['storePassword']\n"
+        "            }\n"
+        "        }\n"
+        "    }\n"
+    )
+    m = re.search(r'\nandroid\s*\{', src)
+    if m:
+        i = m.end()
+        src = src[:i] + sign_block + src[i:]
+
+    src = src.replace(
+        "signingConfig signingConfigs.debug",
+        "signingConfig keystorePropertiesFile.exists() ? signingConfigs.release : signingConfigs.debug",
+    )
+
 open(path, "w").write(src)
 print(f"patched {os.path.relpath(path, app)} (kts={is_kts})")
 PY
@@ -140,5 +177,19 @@ elif os.path.exists(kts):
 else:
     print("WARNING: no root gradle file found for namespace fallback")
 PY
+
+if [ -n "${KEYSTORE_BASE64:-}" ]; then
+  echo "==> Materializing release keystore + key.properties from env"
+  printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$app/android/app/release.keystore"
+  cat > "$app/android/key.properties" <<EOF
+storeFile=release.keystore
+storePassword=${KEYSTORE_PASSWORD:-}
+keyAlias=${KEY_ALIAS:-}
+keyPassword=${KEY_PASSWORD:-}
+EOF
+  echo "    wrote app/android/key.properties (release build will be release-signed)"
+else
+  echo "==> KEYSTORE_BASE64 not set; release build falls back to debug signing"
+fi
 
 echo "==> Assembly complete: $app"

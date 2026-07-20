@@ -25,6 +25,12 @@ app/android/app/src/debug/
 app/android/app/src/profile/
 app/android/app/src/main/res/
 
+# Signing secrets (materialized in CI from GitHub secrets; never commit)
+app/android/key.properties
+app/android/app/release.keystore
+*.keystore
+*.jks
+
 # Go
 *.test
 

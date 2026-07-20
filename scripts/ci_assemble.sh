@@ -88,6 +88,10 @@ subprojects {
                         if (m) { ext.namespace = m[0][1] }
                     }
                 }
+                // Legacy plugins pin an old compileSdk (<31); their transitive
+                // AndroidX deps reference android:attr/lStar (API 31) -> AAPT
+                // "resource lStar not found". Force a modern compileSdk.
+                ext.compileSdkVersion 34
             } catch (ignored) {}
         }
     }
@@ -100,13 +104,16 @@ kts_block = r'''
 subprojects {
     afterEvaluate {
         val ext = extensions.findByName("android")
-        if (ext is com.android.build.gradle.BaseExtension && ext.namespace == null) {
-            val mf = file("src/main/AndroidManifest.xml")
-            if (mf.exists()) {
-                Regex("package=\"(.+?)\"").find(mf.readText())?.let {
-                    ext.namespace = it.groupValues[1]
+        if (ext is com.android.build.gradle.BaseExtension) {
+            if (ext.namespace == null) {
+                val mf = file("src/main/AndroidManifest.xml")
+                if (mf.exists()) {
+                    Regex("package=\"(.+?)\"").find(mf.readText())?.let {
+                        ext.namespace = it.groupValues[1]
+                    }
                 }
             }
+            ext.compileSdkVersion(34)
         }
     }
 }
